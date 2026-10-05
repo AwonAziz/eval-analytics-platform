@@ -22,7 +22,16 @@ from .warehouse.migrate import current_version
 
 
 def _resolve_db(args: argparse.Namespace) -> Path:
-    return Path(args.db or SETTINGS.duckdb_path)
+    """Resolve the warehouse path.
+
+    ``--db`` is accepted on either side of the subcommand, because argparse
+    only parses global options that appear *before* the subcommand and it is
+    far more natural to type ``eap build --db x`` than ``eap --db x build``.
+    The two positions write to different destinations so neither clobbers the
+    other; the post-subcommand value wins when both are given.
+    """
+    chosen = getattr(args, "db_after", None) or getattr(args, "db", None)
+    return Path(chosen or SETTINGS.duckdb_path)
 
 
 def _print_json(payload: Any) -> None:
@@ -132,29 +141,36 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="eap", description="Evaluation and telemetry analytics platform"
     )
-    parser.add_argument("--db", help="path to the DuckDB warehouse")
+    parser.add_argument(
+        "--db", dest="db", help="path to the DuckDB warehouse (also accepted after the subcommand)"
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    build = sub.add_parser("build", help="rebuild the warehouse from raw artifacts")
+    # Repeated on every subcommand so `eap build --db x` works as well as
+    # `eap --db x build`. `db_after` never collides with the global `db`.
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--db", dest="db_after", help=argparse.SUPPRESS)
+
+    build = sub.add_parser("build", parents=[common], help="rebuild the warehouse from raw artifacts")
     build.add_argument("--no-regenerate", action="store_true", help="use artifacts already on disk")
     build.add_argument("--fail-fast", action="store_true", help="stop on the first invalid row")
     build.add_argument("--max-rejections", type=int, default=0, help="tolerated rejected rows")
     build.add_argument("--quiet", action="store_true")
     build.set_defaults(func=cmd_build)
 
-    migrate = sub.add_parser("migrate", help="apply pending schema migrations")
+    migrate = sub.add_parser("migrate", parents=[common], help="apply pending schema migrations")
     migrate.set_defaults(func=cmd_migrate)
 
-    check = sub.add_parser("check", help="run the warehouse quality gate")
+    check = sub.add_parser("check", parents=[common], help="run the warehouse quality gate")
     check.add_argument("--max-rejections", type=int, default=0)
     check.add_argument("--json", action="store_true")
     check.set_defaults(func=cmd_check)
 
-    summary = sub.add_parser("summary", help="row counts and provenance")
+    summary = sub.add_parser("summary", parents=[common], help="row counts and provenance")
     summary.add_argument("--json", action="store_true")
     summary.set_defaults(func=cmd_summary)
 
-    report = sub.add_parser("report", help="print one analytical answer as JSON")
+    report = sub.add_parser("report", parents=[common], help="print one analytical answer as JSON")
     report.add_argument(
         "name",
         choices=[
@@ -169,7 +185,7 @@ def build_parser() -> argparse.ArgumentParser:
     report.add_argument("--n-boot", type=int, default=4000)
     report.set_defaults(func=cmd_report)
 
-    serve = sub.add_parser("serve", help="start the SQL API")
+    serve = sub.add_parser("serve", parents=[common], help="start the SQL API")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8000)
     serve.add_argument("--log-level", default="info")

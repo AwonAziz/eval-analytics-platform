@@ -238,6 +238,19 @@ class TestCli:
         assert main(["--db", db_path, "migrate"]) == 0
         assert "already up to date" in capsys.readouterr().out
 
+    def test_db_is_accepted_on_either_side_of_the_subcommand(self, db_path: str, capsys):
+        """`eap build --db x` is the natural order, not `eap --db x build`."""
+        for argv in (
+            ["--db", db_path, "check"],
+            ["check", "--db", db_path],
+        ):
+            assert main(argv) == 0, argv
+            assert "warehouse gate: PASS" in capsys.readouterr().out, argv
+
+    def test_post_subcommand_db_wins_when_both_are_given(self, db_path: str, capsys):
+        assert main(["--db", "nonexistent.duckdb", "check", "--db", db_path]) == 0
+        assert "warehouse gate: PASS" in capsys.readouterr().out
+
 
 class TestTelemetryIntegration:
     """Optional: exercises the real upstream database when it is present."""

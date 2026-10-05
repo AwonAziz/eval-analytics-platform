@@ -34,9 +34,10 @@ jobs:
           pip install -e ".[dev]"
 
       # The suite builds its own hermetic warehouse, so it does not depend on
-      # any external telemetry database being present.
+      # any external telemetry database being present. No `-q` here: pyproject
+      # already sets it, and `-q -q` would suppress the summary line.
       - name: Test
-        run: pytest -q --cov=eval_analytics --cov-report=term-missing
+        run: pytest --cov=eval_analytics --cov-report=term-missing
 
       # Rebuild the warehouse from raw artifacts exactly as a fresh checkout
       # would, then run the gate. This is the step that fails the build when a

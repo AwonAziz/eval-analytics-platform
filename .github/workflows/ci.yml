@@ -86,19 +86,30 @@ jobs:
               print(f"  {response.status_code}  {url}")
           PY
 
+      # The dashboard resolves its warehouse from EAP_DUCKDB_PATH at import
+      # time, and CI built to build/ci.duckdb rather than the default location.
       - name: Smoke-test the dashboard
+        env:
+          EAP_DUCKDB_PATH: build/ci.duckdb
         run: |
           python - <<'PY'
           from streamlit.testing.v1 import AppTest
 
           app = AppTest.from_file("dashboard/app.py", default_timeout=600)
           app.run()
+
+          if app.exception:
+              raise SystemExit(f"dashboard failed to start: {[str(e.value) for e in app.exception]}")
+          if not app.sidebar.radio:
+              raise SystemExit("dashboard rendered no sidebar; it likely stopped for a missing warehouse")
+
           views = app.sidebar.radio[0].options
           for view in views:
               app.sidebar.radio[0].set_value(view).run()
               assert not app.exception, (view, [str(e.value) for e in app.exception])
               charts = len(app.get("plotly_chart"))
               print(f"  ok  {view}  charts={charts}")
+          print(f"  {len(views)} views rendered")
           PY
 
       - name: Upload warehouse

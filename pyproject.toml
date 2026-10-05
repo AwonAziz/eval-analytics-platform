@@ -1,0 +1,81 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "eval-analytics-platform"
+version = "0.1.0"
+description = "SQL-backed evaluation and telemetry analytics platform over ML run artifacts"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+
+dependencies = [
+    "duckdb>=1.1",
+    "SQLAlchemy>=2.0",
+    "pandas>=2.2",
+    "numpy>=1.26",
+    "pydantic>=2.6",
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "plotly>=5.20",
+    "streamlit>=1.31",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-cov>=5.0"]
+
+[project.scripts]
+eap = "eval_analytics.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+markers = [
+    "slow: end-to-end pipeline runs",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "PL", "RUF", "DTZ"]
+ignore = [
+    # dict(...) is used deliberately where it reads better than a literal
+    # when keys are computed, and dicts are the natural output shape here.
+    "C408",
+    # int() around values already known to be integral adds noise.
+    "RUF046",
+    # datetime.now(timezone.utc) is used deliberately; naive local time would
+    # make warehouse dates depend on the machine's timezone.
+    "DTZ005",
+    # Line-length disagreements between the formatter and the linter.
+    "E501",
+    # Literal values in comparisons are the point of most assertions.
+    "PLR2004",
+    # Pipeline stages legitimately take one argument per input collection.
+    "PLR0913", "PLR0917",
+    # The ELT orchestrator and the generator read top-to-bottom as a
+    # sequence of stages; splitting them would hide that.
+    "PLR0915", "PLR0912", "PLR0911",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# The dashboard inserts REPO_ROOT into sys.path before importing the package,
+# so those imports are intentionally below other statements.
+"dashboard/app.py" = ["E402"]
+# CLI subcommands import their dependencies lazily so `eap check` does not pay
+# for pandas/plotly/streamlit import time it will never use.
+"src/eval_analytics/cli.py" = ["PLC0415"]
+# jsonable imports pandas lazily: it is a pure-python module until a pandas
+# value actually shows up, and must not force the dependency on import.
+"src/eval_analytics/serialize.py" = ["PLC0415"]
+# scipy is imported inside mcnemar_exact so that the calibration-only path
+# never pays for it.
+"src/eval_analytics/analytics/stats.py" = ["PLC0415"]
+# Tests assert against literal expected values, reach into private helpers to
+# check the guards themselves, and import fixtures locally for clarity.
+"tests/*" = ["SLF001", "PLC0415", "PLR2004"]

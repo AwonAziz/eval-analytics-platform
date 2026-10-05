@@ -1,0 +1,28 @@
+# Normalise line endings on commit, check out with LF everywhere.
+#
+# Without this, a Windows checkout rewrites every tracked file to CRLF and
+# Linux CI sees the whole tree as modified. The Makefile and CI workflow must
+# stay LF or they will not run.
+* text=auto eol=lf
+
+*.py   text eol=lf
+*.sql  text eol=lf
+*.md   text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.toml text eol=lf
+Makefile text eol=lf
+
+# Genuinely Windows-only scripts keep CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1  text eol=crlf
+
+# Never treat these as text, and never let git try to normalise them.
+*.npy   binary
+*.npz   binary
+*.duckdb binary
+*.joblib binary
+*.png   binary
+*.jpg   binary
+*.pdf   binary

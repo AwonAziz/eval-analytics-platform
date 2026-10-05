@@ -1,0 +1,27 @@
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+build/
+
+# The entire data tree is derived output, not source.
+#
+# `eap build` regenerates the warehouse and, when telemetry is absent, the
+# synthetic fine-tune artifacts from a fixed seed. The rebuild is
+# byte-reproducible -- `test_headline_metrics_are_reproducible` asserts it --
+# so committing these files would only add ~21 MB of churn and guarantee
+# merge conflicts on every rebuild.
+#
+# To analyse real artifacts instead, drop them under `data/raw/`. They stay
+# untracked by design: run artifacts are inputs local to a machine, not
+# something that belongs in the repository.
+data/
+
+# Never commit credentials. The only configuration this project reads is
+# EAP_DUCKDB_PATH and EAP_TELEMETRY_DB_PATH, both plain paths.
+.env
+.env.*
+*.pem
+*.key

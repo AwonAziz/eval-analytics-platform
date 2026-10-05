@@ -1,0 +1,110 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PYTHONIOENCODING: "utf-8"
+
+jobs:
+  build:
+    name: Rebuild warehouse and verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      # The suite builds its own hermetic warehouse, so it does not depend on
+      # any external telemetry database being present.
+      - name: Test
+        run: pytest -q --cov=eval_analytics --cov-report=term-missing
+
+      # Rebuild the warehouse from raw artifacts exactly as a fresh checkout
+      # would, then run the gate. This is the step that fails the build when a
+      # mart is stale or any row fails validation.
+      - name: Build warehouse from raw artifacts
+        run: eap build --db build/ci.duckdb
+
+      - name: Quality gate
+        run: eap check --db build/ci.duckdb
+
+      - name: Gate report
+        if: always()
+        run: eap check --db build/ci.duckdb --json || true
+
+      - name: Summary
+        run: eap summary --db build/ci.duckdb
+
+      - name: Every analytical query must return a result
+        run: |
+          for report in lora-vs-full calibration quantisation drift length-buckets slice-losses; do
+            echo "::group::$report"
+            eap report "$report" --db build/ci.duckdb --n-boot 1000 > "/tmp/$report.json"
+            python -c "import json,sys; d=json.load(open('/tmp/$report.json')); assert d, 'empty report'"
+            echo "::endgroup::"
+          done
+
+      - name: Smoke-test the API
+        run: |
+          python - <<'PY'
+          from fastapi.testclient import TestClient
+          from eval_analytics.api.app import create_app
+
+          client = TestClient(create_app("build/ci.duckdb"))
+          for url in (
+              "/health",
+              "/meta/summary",
+              "/analysis/lora-vs-full?n_boot=500",
+              "/analysis/calibration",
+              "/analysis/quantisation",
+              "/analysis/drift",
+              "/analysis/length-buckets",
+              "/analysis/slice-losses?n_boot=500",
+          ):
+              response = client.get(url)
+              assert response.status_code == 200, (url, response.status_code, response.text[:400])
+              print(f"  {response.status_code}  {url}")
+          PY
+
+      - name: Smoke-test the dashboard
+        run: |
+          python - <<'PY'
+          from streamlit.testing.v1 import AppTest
+
+          app = AppTest.from_file("dashboard/app.py", default_timeout=600)
+          app.run()
+          views = app.sidebar.radio[0].options
+          for view in views:
+              app.sidebar.radio[0].set_value(view).run()
+              assert not app.exception, (view, [str(e.value) for e in app.exception])
+              charts = len(app.get("plotly_chart"))
+              print(f"  ok  {view}  charts={charts}")
+          PY
+
+      - name: Upload warehouse
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: duckdb-warehouse
+          path: build/*.duckdb
+          retention-days: 7
+          if-no-files-found: ignore
